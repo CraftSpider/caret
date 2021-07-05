@@ -1,0 +1,19 @@
+
+section Chunk {
+    length : uint
+    type : char[4]
+    data : char[length]
+    crc : uint
+}
+
+section EndChunk {
+    length : 0x00000000
+    type : "IEND"
+    crc : uint
+}
+
+file PNG {
+    magic : 0x89504E470D0A1A0A
+    chunks : Chunk[]
+    end_chunk : EndChunk
+}

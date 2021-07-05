@@ -1,0 +1,31 @@
+
+type string doublequoted
+type Value = Dict|List|int|float|string
+
+section DictEntry {
+    name : string -> isunique(name, context.array.name)
+    : r"\s*:\s*"
+    data : Value
+    : ? r"\s*}".hasmatch <null> <','>
+}
+
+section Dict {
+    : '{'
+    entries : DictEntry[]
+    : '}'
+}
+
+section ListEntry {
+    data : Value
+    : ? r"\s*}".hasmatch <null> <','>
+}
+
+section List {
+    : '['
+    entries : ListEntry[]
+    : ']'
+}
+
+file JSON {
+    data : Value
+}

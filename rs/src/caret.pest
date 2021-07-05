@@ -1,0 +1,167 @@
+
+////////////////////////////
+// Top level declarations //
+////////////////////////////
+
+// The whole file
+tl = { SOI ~ (NEWLINE | encoding | type_decl | file | section)+ ~ EOI }
+
+// An encoding declaration
+encoding = { "encoding" ~ encoding_name ~ NEWLINE? }
+
+// Encoding of the input
+/// Red
+encoding_name = { "binary" | "ascii" | "utf8" | "utf16" } // ETC, ETC. May make this any string in the future
+
+// A `type ...`
+type_decl = { "type" ~ (ty_alias | ty_rule) ~ NEWLINE? }
+
+// Rule for a type, for example how strings are encoded
+/// Blue
+ty_rule = { ty ~ ident_ext }
+
+// An alias for a type, possibly with a rule applied
+/// Green
+ty_alias = { ident ~ "=" ~ constraint ~ (!"\r" | !"\n") ~ ident_ext? }
+
+// A file type / constraint block
+/// #FF00FF
+file = { "file" ~ ident ~ constraints_block }
+
+// A section type / constraint block
+/// #FF00FF
+section = { "section" ~ ident ~ constraints_block }
+
+/// #FFFF00
+constraints_block = { "{" ~ NEWLINE* ~ (name_constraint ~ NEWLINE*)+ ~ NEWLINE* ~ "}" }
+
+///////////////////////
+// Inner expressions //
+///////////////////////
+
+/// #FFBBCC
+name_constraint = { ident? ~ ":" ~ constraint ~ ("->" ~ val_constraint)? }
+
+hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+
+dec_literal = @{ ASCII_DIGIT+ }
+
+oct_literal = @{ "0o" ~ ASCII_OCT_DIGIT+ }
+
+bin_literal = @{ "0b" ~ ASCII_BIN_DIGIT+ }
+
+int_literal = @{
+    "-"? ~ (hex_literal | oct_literal | bin_literal | dec_literal)
+}
+
+float_literal = @{
+    ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ "f"?
+}
+
+raw_string = { !("\\" | "\"") ~ ANY }
+
+predefined_esc = { "n" | "r" | "t" | "\\" | "0" | "\"" | "'" }
+byte_esc = { "x" ~ ASCII_HEX_DIGIT{2} }
+unicode_esc = { "u" ~ "{" ~ ASCII_HEX_DIGIT{1, 6} ~ "}" }
+
+escape_string = { "\\" ~ (predefined_esc | byte_esc | unicode_esc) }
+
+string_literal = @{
+    ("u" | "r")? ~ "\"" ~ (raw_string+ | escape_string)* ~ "\""
+}
+
+char_literal = @{
+    "u"? ~ "'" ~ (raw_string | escape_string) ~ "'"
+}
+
+boolean_literal = @{ "true" | "false" }
+
+array_literal = { "[" ~ (literal ~ ("," ~ literal)*)? ~ "]" }
+
+// Any literal value
+/// #CCDDFF
+literal = {
+    float_literal |
+    int_literal |
+    string_literal |
+    char_literal |
+    boolean_literal |
+    array_literal
+}
+
+// Any type
+ty = { ty_name ~ (pointer | array)? }
+ty_name = { builtin | ident }
+
+builtin = {
+    "sint8" |
+    "sint16" |
+    "sint32" |
+    "sint64" |
+    "uint8" |
+    "uint16" |
+    "uint32" |
+    "uint64" |
+    "float32" |
+    "float64" |
+    "string" |
+    "bool" |
+    "null"
+}
+
+array = { "[" ~ ASCII_DIGIT* ~ "]" }
+
+pointer = { "*" }
+
+union = {
+    "|"
+}
+
+conditional = {
+    "?" ~ expr ~ "<" ~ constraint ~ ">" ~ "<" ~ constraint ~ ">"
+}
+
+global = {
+    "@" ~ ty
+}
+
+constraint_sub = {
+    literal |
+    ty |
+    conditional |
+    global
+}
+
+// A constraint
+/// #00FFFF
+constraint = {
+    constraint_sub ~ (union ~ constraint)?
+}
+
+val_constraint = { expr }
+
+// TODO
+expr_sub = {
+    literal
+}
+
+// TODO
+expr = { expr_sub ~ expr? }
+
+//////////////////
+// Atomic types //
+//////////////////
+
+// Named identifiers, can't be started with numbers for ambiguity with future literal extensions
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")+ }
+
+// Full identifiers, can start with numbers as they couldn't mean a literal
+ident_ext = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+nl = @{ "\r"? ~ "\n" }
+
+///////////////////
+// Special rules //
+///////////////////
+
+WHITESPACE = _{ " " | "\t" }

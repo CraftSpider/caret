@@ -1,0 +1,61 @@
+
+encoding binary
+type string nullencoded
+type NewString = string quoted
+type Alias = sint32|float32
+
+section SectionA {
+
+    name1 : sint32
+    name2 : sint32[]
+    name3 : sint32[6]
+    name4 : sint32*
+    name5 : sint32|null
+
+    name6 : 0xFF
+    name7 : 1
+    name8 : -7
+    name9 : 1.f
+    name10 : 1.0
+    name11 : "Test"
+    name12 : u"Test"
+    name13 : r"Test"
+    name14 : 'C'
+    name15 : u'C'
+    name16 : true
+    name17 : false
+
+    name18 : ? null is null <true> <false>
+
+    name19 : @SectionB
+
+    name20 : null -> isunique
+
+    : null
+
+}
+
+file FilaA {
+    section : SectionA
+    : SectionA
+}
+
+section StressTest {
+    this_is_a_very_long_name_with_a_lot_ofUnderscoresAndAlsoSwitchingStyleHalfwayThrough : null
+    nested_conditional : ? null is null <? null is null <true> <false>> <? null is null <true> <false>>
+    complex_union : ? null is null <true> <false> | ? null is null <true> <false>
+    long_union : sint8|sint16|sint32|sint64|uint8|uint16|uint32|uint64|null
+    pointer_pointer : SectionA***
+    array_array : Section[1][1][1]
+    pointer_array : Section*[1]
+    array_pointer : Section[1]*
+    complex_string : "String with spaces and \"embedded\" quotes"
+}
+
+section      WeirdSpacing     {
+  name:?a is b<null><null>
+    name :null
+  name: null    | SectionA
+:@   SectionA
+name:null->isunique
+}

@@ -1,0 +1,31 @@
+
+section Header {
+    magic : 0x00000000447A0000
+    coll_num : int|null
+    coll_ptr : ? coll_num is null <null> <CollisionHeader[coll_num]*>
+    pos_data : PositionData*
+    fallout_data : FalloutData*
+    goal_num : int|null
+    goal_list : ? goal_num is null <null> <Goal[goal_num]*>
+}
+
+section CollisionHeader {
+    x_center : float
+    y_center : float
+    z_center : float
+    x_init : short
+    y_init : short
+    z_init : short
+    loop_type : short
+    anim_header : ? context.index is 0 <null> <AnimationHeader*>
+    x_conveyor : float
+    y_conveyor : float
+    z_conveyor : float
+}
+
+file Stagedef {
+    header : Header
+    : @CollisionHeader
+}
+
+
