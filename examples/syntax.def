@@ -50,6 +50,7 @@ section StressTest {
     pointer_array : Section*[1]
     array_pointer : Section[1]*
     complex_string : "String with spaces and \"embedded\" quotes"
+    complex_expr : null -> isunique(self, array) or 1 lt 2 and section.long_union is null
 }
 
 section      WeirdSpacing     {
