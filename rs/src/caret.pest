@@ -114,10 +114,6 @@ array = { "[" ~ expr? ~ "]" }
 
 pointer = { "*" }
 
-union = {
-    "|"
-}
-
 conditional = {
     "?" ~ "(" ~ expr ~ ")" ~ "<" ~ ty_constraint ~ ">" ~ "<" ~ ty_constraint ~ ">"
 }
@@ -136,7 +132,7 @@ constraint_sub = {
 // A constraint
 /// #00FFFF
 ty_constraint = {
-    constraint_sub ~ (union ~ ty_constraint)?
+    constraint_sub ~ ("|" ~ constraint_sub)*
 }
 
 val_constraint = { expr }
@@ -193,7 +189,7 @@ expr_primary = {
 }
 
 expr_list = {
-    expr ~ ("," ~ expr | ",")?
+    expr ~ ("," ~ expr)* ~ (",")?
 }
 
 expr = { expr_primary ~ (expr_op ~ expr_primary)* }

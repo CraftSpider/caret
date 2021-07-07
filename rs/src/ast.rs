@@ -98,7 +98,7 @@ impl TryFrom<Pair<'_>> for CtExprSuffix {
         } else {
             CtExprSuffix::Braces
         };
-        let res: Vec<_> = pair.into_inner()
+        let res = pair.into_inner()
             .next()
             .map(|p| {
                 p.into_inner()
@@ -123,18 +123,18 @@ impl TryFrom<Pair<'_>> for CtExprPrimary {
 
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         assert_rule!(pair, expr_primary);
-        let mut res: Vec<_> = pair.into_inner().collect();
+        let mut res = pair.into_inner();
 
         let mut prefixes = Vec::new();
-        while res[0].as_rule() == Rule::expr_prefix {
-            prefixes.push(CtExprPrefix::try_from(res.remove(0))?)
+        while res.peek().unwrap().as_rule() == Rule::expr_prefix {
+            prefixes.push(CtExprPrefix::try_from(res.next().unwrap())?)
         }
 
-        let target = CtExprTarget::try_from(res.remove(0))?;
+        let target = CtExprTarget::try_from(res.next().unwrap())?;
 
         let mut suffixes = Vec::new();
-        while !res.is_empty() {
-            suffixes.push(CtExprSuffix::try_from(res.remove(0))?)
+        while let Some(item) = res.next() {
+            suffixes.push(CtExprSuffix::try_from(item)?)
         }
 
         Ok(CtExprPrimary {
@@ -289,9 +289,9 @@ pub enum CtType {
 }
 
 fn parse_ty_name(pair: Pair<'_>) -> CtType {
-    let mut res: Vec<_> = pair.into_inner().collect();
-    match res[0].as_rule() {
-        Rule::builtin => CtType::Builtin(match res.remove(0).as_str() {
+    let res = pair.into_inner().next().unwrap();
+    match res.as_rule() {
+        Rule::builtin => CtType::Builtin(match res.as_str() {
             "sint8" => BuiltinType::I8,
             "sint16" => BuiltinType::I16,
             "sint32" => BuiltinType::I32,
@@ -307,7 +307,7 @@ fn parse_ty_name(pair: Pair<'_>) -> CtType {
             "null" => BuiltinType::Null,
             _ => unreachable!(),
         }),
-        Rule::ident => CtType::Section(res.remove(0).as_str().to_string()),
+        Rule::ident => CtType::Section(res.as_str().to_string()),
         _ => unreachable!(),
     }
 }
@@ -318,20 +318,17 @@ impl TryFrom<Pair<'_>> for CtType {
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         assert_rule!(pair, ty);
 
-        let mut res: Vec<_> = pair.into_inner().collect();
-        let mut out = parse_ty_name(res.remove(0));
+        let mut res = pair.into_inner();
+        let mut out = parse_ty_name(res.next().unwrap());
         for remaining in res {
             match remaining.as_rule() {
                 Rule::pointer => {
                     out = CtType::Builtin(BuiltinType::Pointer(Box::new(out)));
                 },
                 Rule::array => {
-                    let mut inner: Vec<_> = remaining.into_inner().collect();
-                    let expr = if !inner.is_empty() {
-                        Some(CtExpr::try_from(inner.remove(0))?)
-                    } else {
-                        None
-                    };
+                    let expr = remaining.into_inner().next()
+                        .map(CtExpr::try_from)
+                        .transpose()?;
                     out = CtType::Builtin(BuiltinType::Array(Box::new(out), expr))
                 },
                 _ => unreachable!(),
@@ -353,11 +350,11 @@ impl TryFrom<Pair<'_>> for CtCondition {
 
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         assert_rule!(pair, conditional);
-        let mut res: Vec<_> = pair.into_inner().collect();
+        let mut res = pair.into_inner();
         Ok(CtCondition {
-            condition: CtExpr::try_from(res.remove(0))?,
-            left: CtTyConstraint::try_from(res.remove(0))?,
-            right: CtTyConstraint::try_from(res.remove(0))?,
+            condition: CtExpr::try_from(res.next().unwrap())?,
+            left: CtTyConstraint::try_from(res.next().unwrap())?,
+            right: CtTyConstraint::try_from(res.next().unwrap())?,
         })
     }
 }
@@ -373,13 +370,13 @@ pub enum CtTyConstraint {
 
 fn parse_constraint_sub(pair: Pair<'_>) -> Result<CtTyConstraint, ParseError> {
     assert_rule!(pair, constraint_sub);
-    let mut res: Vec<_> = pair.into_inner().collect();
+    let res = pair.into_inner().next().unwrap();
 
-    Ok(match res[0].as_rule() {
-        Rule::literal => CtTyConstraint::Literal(CtLiteral::try_from(res.remove(0))?),
-        Rule::ty => CtTyConstraint::Type(CtType::try_from(res.remove(0))?),
-        Rule::conditional => CtTyConstraint::Conditional(Box::new(CtCondition::try_from(res.remove(0))?)),
-        Rule::global => CtTyConstraint::Global(CtType::try_from(res.remove(0).into_inner().next().unwrap())?),
+    Ok(match res.as_rule() {
+        Rule::literal => CtTyConstraint::Literal(CtLiteral::try_from(res)?),
+        Rule::ty => CtTyConstraint::Type(CtType::try_from(res)?),
+        Rule::conditional => CtTyConstraint::Conditional(Box::new(CtCondition::try_from(res)?)),
+        Rule::global => CtTyConstraint::Global(CtType::try_from(res.into_inner().next().unwrap())?),
         _ => unreachable!(),
     })
 }
@@ -389,24 +386,20 @@ impl TryFrom<Pair<'_>> for CtTyConstraint {
 
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         assert_rule!(pair, ty_constraint);
-        let mut res: Vec<_> = pair.into_inner().collect();
+        let mut res = pair.into_inner();
 
-        let out = parse_constraint_sub(res.remove(0))?;
+        let out = parse_constraint_sub(res.next().unwrap())?;
 
-        if !res.is_empty() {
-            let mut union = vec![out];
-            match CtTyConstraint::try_from(res.remove(1))? {
-                CtTyConstraint::Union(remainder) => {
-                    union.extend(remainder);
-                    Ok(CtTyConstraint::Union(union))
-                },
-                constraint => {
-                    union.push(constraint);
-                    Ok(CtTyConstraint::Union(union))
-                },
-            }
-        } else {
+        if res.peek().is_none() {
             Ok(out)
+        } else {
+            let mut union = vec![out];
+
+            while let Some(item) = res.next() {
+                union.push(parse_constraint_sub(item)?)
+            }
+
+            Ok(CtTyConstraint::Union(union))
         }
     }
 }
@@ -439,21 +432,19 @@ impl TryFrom<Pair<'_>> for CtConstraint {
 
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         assert_rule!(pair, name_constraint);
-        let mut res: Vec<_> = pair.into_inner().collect();
+        let mut res = pair.into_inner();
 
-        let name = if let Rule::ident = res[0].as_rule() {
-            Some(res.remove(0).as_str().to_string())
+        let name = if let Rule::ident = res.peek().unwrap().as_rule() {
+            Some(res.next().unwrap().as_str().to_string())
         } else {
             None
         };
 
-        let ty_constraint = CtTyConstraint::try_from(res.remove(0))?;
+        let ty_constraint = CtTyConstraint::try_from(res.next().unwrap())?;
 
-        let val_constraint = if !res.is_empty() {
-            Some(CtValConstraint::try_from(res.remove(0))?)
-        } else {
-            None
-        };
+        let val_constraint = res.next()
+            .map(CtValConstraint::try_from)
+            .transpose()?;
 
         Ok(CtConstraint {
             name,
@@ -486,12 +477,12 @@ impl TryFrom<Pair<'_>> for CtSection {
             rule => return Err(ParseError::InvalidRule(Rule::section, rule))
         };
 
-        let mut res: Vec<_> = pair.into_inner().collect();
+        let mut res = pair.into_inner();
 
         Ok(CtSection {
             kind,
-            name: res.remove(0).as_str().to_string(),
-            constraints: res.remove(0).into_inner().map(CtConstraint::try_from).collect::<Result<_, _>>()?
+            name: res.next().unwrap().as_str().to_string(),
+            constraints: res.next().unwrap().into_inner().map(CtConstraint::try_from).collect::<Result<_, _>>()?
         })
     }
 }
