@@ -25,7 +25,7 @@ section SectionA {
     name16 : true
     name17 : false
 
-    name18 : ? null is null <true> <false>
+    name18 : ? (null is null) <true> <false>
 
     name19 : @SectionB
 
@@ -42,19 +42,20 @@ file FilaA {
 
 section StressTest {
     this_is_a_very_long_name_with_a_lot_ofUnderscoresAndAlsoSwitchingStyleHalfwayThrough : null
-    nested_conditional : ? null is null <? null is null <true> <false>> <? null is null <true> <false>>
-    complex_union : ? null is null <true> <false> | ? null is null <true> <false>
+    nested_conditional : ? (null is null) <? (null is null) <true> <false>> <? (null is null) <true> <false>>
+    complex_union : ? (null is null) <true> <false> | ? (null is null) <true> <false>
     long_union : sint8|sint16|sint32|sint64|uint8|uint16|uint32|uint64|null
     pointer_pointer : SectionA***
     array_array : Section[1][1][1]
     pointer_array : Section*[1]
     array_pointer : Section[1]*
     complex_string : "String with spaces and \"embedded\" quotes"
-    complex_expr : null -> isunique(self, array) or 1 lt 2 and section.long_union is null
+    complex_expr : null -> isunique(self, array) or 1 < 2 and not (section.long_union is null)
+    paren_expr : null -> ([1, 2, 3])((1 is 2)()() is (3 is 4)())
 }
 
 section      WeirdSpacing     {
-  name:?a is b<null><null>
+  name:?(a is b)<null><null>
     name :null
   name: null    | SectionA
 :@   SectionA

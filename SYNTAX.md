@@ -86,6 +86,7 @@ Caret has a number of builtin types, for common operations
 | []      | An array of values              | num or variable  | num or variable                           |
 | *       | A pointer to a value            | 4 or 8           |                                           |
 
+* Implementations may choose to support arbitrary sizing for sint/uint/float.
 * Null is special. A null on its own has size 0, but a null in a union has the size of the smallest union member
 
 ### Encoding declaration
@@ -149,9 +150,9 @@ Types of constraint:
     - Section|sint32[]
 - Conditional
     - An expression followed by the type if expression is true, then if expression is false
-    - ? 1 is 1 or not a and b \<true> \<false>
+    - ? (1 is 1 or not a and b) \<true> \<false>
 - Global
-    - A limit that all objects of a type must appear here. Does not otherwise guarantee anything
+    - A limit that all pointers to objects of a type must appear here. Does not otherwise guarantee anything
     - @SectionName
 
 Global functions (for expressions):

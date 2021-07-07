@@ -1,4 +1,192 @@
 
+use pest::prec_climber::{Operator, PrecClimber, Assoc};
+
+use std::convert::TryFrom;
+
+use crate::parse::{Pair, Rule, Error as ParseError};
+
+macro_rules! assert_rule {
+    ($pair:ident, $rule:ident) => {
+        if $pair.as_rule() != Rule::$rule {
+            return Err(ParseError::InvalidRule(Rule::$rule, $pair.as_rule()));
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CtOp {
+    Is,
+    And,
+    Or,
+    Lt,
+    Gt,
+    Dot,
+}
+
+impl TryFrom<Pair<'_>> for CtOp {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        Ok(match pair.as_rule() {
+            Rule::op_is => CtOp::Is,
+            Rule::op_and => CtOp::And,
+            Rule::op_or => CtOp::Or,
+            Rule::op_lt => CtOp::Lt,
+            Rule::op_gt => CtOp::Gt,
+            Rule::op_dot => CtOp::Dot,
+            rule => return Err(ParseError::InvalidRule(Rule::expr_op, rule)),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum CtExprPrefix {
+    Not,
+    Neg,
+}
+
+impl TryFrom<Pair<'_>> for CtExprPrefix {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, expr_prefix);
+        Ok(match pair.as_str() {
+            "not" => CtExprPrefix::Not,
+            "-" => CtExprPrefix::Neg,
+            _ => unreachable!(),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum CtExprTarget {
+    Literal(CtLiteral),
+    Ident(String),
+    Expr(Box<CtExpr>),
+}
+
+impl TryFrom<Pair<'_>> for CtExprTarget {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, expr_target);
+
+        let res = pair.into_inner().next().unwrap();
+        match res.as_rule() {
+            Rule::literal => Ok(CtExprTarget::Literal(CtLiteral::try_from(res)?)),
+            Rule::ident => Ok(CtExprTarget::Ident(res.as_str().to_string())),
+            Rule::expr => Ok(CtExprTarget::Expr(Box::new(CtExpr::try_from(res)?))),
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CtExprSuffix {
+    Parens(Vec<CtExpr>), // May be empty
+    Braces(Vec<CtExpr>), // May not be empty
+}
+
+
+impl TryFrom<Pair<'_>> for CtExprSuffix {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, expr_suffix);
+        let ty = if pair.as_str().starts_with('(') {
+            CtExprSuffix::Parens
+        } else {
+            CtExprSuffix::Braces
+        };
+        let res: Vec<_> = pair.into_inner()
+            .next()
+            .map(|p| {
+                p.into_inner()
+                    .map(CtExpr::try_from)
+                    .collect::<Result<_, _>>()
+            })
+            .transpose()?
+            .unwrap_or_else(Vec::new);
+        Ok(ty(res))
+    }
+}
+
+#[derive(Debug)]
+pub struct CtExprPrimary {
+    prefixes: Vec<CtExprPrefix>,
+    target: CtExprTarget,
+    suffixes: Vec<CtExprSuffix>,
+}
+
+impl TryFrom<Pair<'_>> for CtExprPrimary {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, expr_primary);
+        let mut res: Vec<_> = pair.into_inner().collect();
+
+        let mut prefixes = Vec::new();
+        while res[0].as_rule() == Rule::expr_prefix {
+            prefixes.push(CtExprPrefix::try_from(res.remove(0))?)
+        }
+
+        let target = CtExprTarget::try_from(res.remove(0))?;
+
+        let mut suffixes = Vec::new();
+        while !res.is_empty() {
+            suffixes.push(CtExprSuffix::try_from(res.remove(0))?)
+        }
+
+        Ok(CtExprPrimary {
+            prefixes,
+            target,
+            suffixes,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum CtExpr {
+    Leaf(CtExprPrimary),
+    Op {
+        left: Box<CtExpr>,
+        op: CtOp,
+        right: Box<CtExpr>,
+    }
+}
+
+impl TryFrom<Pair<'_>> for CtExpr {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, expr);
+        let climber = PrecClimber::new(vec![
+            Operator::new(Rule::op_lt, Assoc::Left) | Operator::new(Rule::op_gt, Assoc::Left),
+            Operator::new(Rule::op_or, Assoc::Left),
+            Operator::new(Rule::op_and, Assoc::Left),
+            Operator::new(Rule::op_is, Assoc::Left),
+            Operator::new(Rule::op_dot, Assoc::Left),
+        ]);
+
+        climber.climb(
+            pair.into_inner(),
+            |pair| {
+                Ok(CtExpr::Leaf(CtExprPrimary::try_from(pair)?))
+            },
+        |left, op, right| {
+                let left = left?;
+                let right = right?;
+
+                Ok(CtExpr::Op {
+                    left: Box::new(left),
+                    op: CtOp::try_from(op)?,
+                    right: Box::new(right),
+                })
+            }
+        )
+    }
+}
+
 #[derive(Debug)]
 pub enum CtLiteral {
     Integer(i128),
@@ -9,6 +197,70 @@ pub enum CtLiteral {
     Char(char),
     Boolean(bool),
     Array(Vec<CtLiteral>),
+}
+
+impl TryFrom<Pair<'_>> for CtLiteral {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, literal);
+        let res = pair.into_inner().next().unwrap();
+
+        Ok(match res.as_rule() {
+            Rule::float_literal => {
+                let res = res.as_str();
+                let res = &res[..(res.len() - 1)];
+                CtLiteral::Float(res.parse().unwrap())
+            },
+            Rule::int_literal => {
+                let res = res.as_str();
+                let (res, radix) = if res.starts_with("0x") {
+                    (&res[2..], 16)
+                } else if res.starts_with("0o") {
+                    (&res[2..], 8)
+                } else if res.starts_with("0b") {
+                    (&res[2..], 2)
+                } else {
+                    (res, 10)
+                };
+                CtLiteral::Integer(i128::from_str_radix(res, radix).unwrap())
+            },
+            Rule::string_literal => {
+                let res = res.as_str();
+                // TODO: Parse escapes
+                if res.starts_with('u') {
+                    CtLiteral::UnicodeString(res.to_string())
+                } else if res.starts_with('r') {
+                    CtLiteral::ByteString(res.as_bytes().to_owned())
+                } else {
+                    CtLiteral::ByteString(res.as_bytes().to_owned())
+                }
+            },
+            Rule::char_literal => {
+                let res = res.as_str();
+                // TODO: Parse escapes
+                if res.starts_with('u') {
+                    CtLiteral::Char(res[1..].trim_matches('\'').chars().nth(0).unwrap())
+                } else {
+                    CtLiteral::Char(res.trim_matches('\'').chars().nth(0).unwrap())
+                }
+            },
+            Rule::boolean_literal => {
+                if res.as_str() == "true" {
+                    CtLiteral::Boolean(true)
+                } else {
+                    CtLiteral::Boolean(false)
+                }
+            },
+            Rule::array_literal => {
+                let vals = res.into_inner()
+                    .map(CtLiteral::try_from)
+                    .collect::<Result<_, _>>()?;
+                CtLiteral::Array(vals)
+            },
+            _ => unreachable!()
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -26,7 +278,7 @@ pub enum BuiltinType {
     String,
     Bool,
     Null,
-    Array(Box<CtType>, Option<usize>),
+    Array(Box<CtType>, Option<CtExpr>),
     Pointer(Box<CtType>),
 }
 
@@ -36,30 +288,179 @@ pub enum CtType {
     Section(String),
 }
 
+fn parse_ty_name(pair: Pair<'_>) -> CtType {
+    let mut res: Vec<_> = pair.into_inner().collect();
+    match res[0].as_rule() {
+        Rule::builtin => CtType::Builtin(match res.remove(0).as_str() {
+            "sint8" => BuiltinType::I8,
+            "sint16" => BuiltinType::I16,
+            "sint32" => BuiltinType::I32,
+            "sint64" => BuiltinType::I64,
+            "uint8" => BuiltinType::U8,
+            "uint16" => BuiltinType::U16,
+            "uint32" => BuiltinType::U32,
+            "uint64" => BuiltinType::U64,
+            "float32" => BuiltinType::F32,
+            "float64" => BuiltinType::F64,
+            "string" => BuiltinType::String,
+            "bool" => BuiltinType::Bool,
+            "null" => BuiltinType::Null,
+            _ => unreachable!(),
+        }),
+        Rule::ident => CtType::Section(res.remove(0).as_str().to_string()),
+        _ => unreachable!(),
+    }
+}
+
+impl TryFrom<Pair<'_>> for CtType {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, ty);
+
+        let mut res: Vec<_> = pair.into_inner().collect();
+        let mut out = parse_ty_name(res.remove(0));
+        for remaining in res {
+            match remaining.as_rule() {
+                Rule::pointer => {
+                    out = CtType::Builtin(BuiltinType::Pointer(Box::new(out)));
+                },
+                Rule::array => {
+                    let mut inner: Vec<_> = remaining.into_inner().collect();
+                    let expr = if !inner.is_empty() {
+                        Some(CtExpr::try_from(inner.remove(0))?)
+                    } else {
+                        None
+                    };
+                    out = CtType::Builtin(BuiltinType::Array(Box::new(out), expr))
+                },
+                _ => unreachable!(),
+            }
+        }
+        Ok(out)
+    }
+}
+
 #[derive(Debug)]
 pub struct CtCondition {
+    condition: CtExpr,
+    left: CtTyConstraint,
+    right: CtTyConstraint,
+}
 
+impl TryFrom<Pair<'_>> for CtCondition {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, conditional);
+        let mut res: Vec<_> = pair.into_inner().collect();
+        Ok(CtCondition {
+            condition: CtExpr::try_from(res.remove(0))?,
+            left: CtTyConstraint::try_from(res.remove(0))?,
+            right: CtTyConstraint::try_from(res.remove(0))?,
+        })
+    }
 }
 
 #[derive(Debug)]
 pub enum CtTyConstraint {
     Literal(CtLiteral),
     Type(CtType),
-    Union(Vec<CtType>),
-    Conditional(CtCondition),
+    Union(Vec<CtTyConstraint>),
+    Conditional(Box<CtCondition>),
     Global(CtType),
+}
+
+fn parse_constraint_sub(pair: Pair<'_>) -> Result<CtTyConstraint, ParseError> {
+    assert_rule!(pair, constraint_sub);
+    let mut res: Vec<_> = pair.into_inner().collect();
+
+    Ok(match res[0].as_rule() {
+        Rule::literal => CtTyConstraint::Literal(CtLiteral::try_from(res.remove(0))?),
+        Rule::ty => CtTyConstraint::Type(CtType::try_from(res.remove(0))?),
+        Rule::conditional => CtTyConstraint::Conditional(Box::new(CtCondition::try_from(res.remove(0))?)),
+        Rule::global => CtTyConstraint::Global(CtType::try_from(res.remove(0).into_inner().next().unwrap())?),
+        _ => unreachable!(),
+    })
+}
+
+impl TryFrom<Pair<'_>> for CtTyConstraint {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, ty_constraint);
+        let mut res: Vec<_> = pair.into_inner().collect();
+
+        let out = parse_constraint_sub(res.remove(0))?;
+
+        if !res.is_empty() {
+            let mut union = vec![out];
+            match CtTyConstraint::try_from(res.remove(1))? {
+                CtTyConstraint::Union(remainder) => {
+                    union.extend(remainder);
+                    Ok(CtTyConstraint::Union(union))
+                },
+                constraint => {
+                    union.push(constraint);
+                    Ok(CtTyConstraint::Union(union))
+                },
+            }
+        } else {
+            Ok(out)
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct CtValConstraint {
+    expr: CtExpr,
+}
 
+impl TryFrom<Pair<'_>> for CtValConstraint {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, val_constraint);
+        Ok(CtValConstraint {
+            expr: CtExpr::try_from(pair.into_inner().next().unwrap())?
+        })
+    }
 }
 
 #[derive(Debug)]
 pub struct CtConstraint {
-    name: Option<String>,
-    ty_constraint: CtTyConstraint,
-    val_constraint: Option<CtValConstraint>
+    pub name: Option<String>,
+    pub ty_constraint: CtTyConstraint,
+    pub val_constraint: Option<CtValConstraint>
+}
+
+impl TryFrom<Pair<'_>> for CtConstraint {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, name_constraint);
+        let mut res: Vec<_> = pair.into_inner().collect();
+
+        let name = if let Rule::ident = res[0].as_rule() {
+            Some(res.remove(0).as_str().to_string())
+        } else {
+            None
+        };
+
+        let ty_constraint = CtTyConstraint::try_from(res.remove(0))?;
+
+        let val_constraint = if !res.is_empty() {
+            Some(CtValConstraint::try_from(res.remove(0))?)
+        } else {
+            None
+        };
+
+        Ok(CtConstraint {
+            name,
+            ty_constraint,
+            val_constraint,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -75,10 +476,55 @@ pub struct CtSection {
     pub constraints: Vec<CtConstraint>,
 }
 
+impl TryFrom<Pair<'_>> for CtSection {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        let kind = match pair.as_rule() {
+            Rule::section => SectionKind::Section,
+            Rule::file => SectionKind::File,
+            rule => return Err(ParseError::InvalidRule(Rule::section, rule))
+        };
+
+        let mut res: Vec<_> = pair.into_inner().collect();
+
+        Ok(CtSection {
+            kind,
+            name: res.remove(0).as_str().to_string(),
+            constraints: res.remove(0).into_inner().map(CtConstraint::try_from).collect::<Result<_, _>>()?
+        })
+    }
+}
+
 #[derive(Debug)]
 pub enum CtTypeDecl {
     Rule(CtType, String),
-    Alias(String, CtConstraint, String)
+    Alias(String, CtTyConstraint, Option<String>)
+}
+
+impl TryFrom<Pair<'_>> for CtTypeDecl {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, type_decl);
+        let res = pair.into_inner().next().unwrap();
+
+        match res.as_rule() {
+            Rule::ty_rule => {
+                let mut res = res.into_inner();
+                Ok(CtTypeDecl::Rule(CtType::try_from(res.next().unwrap())?, res.next().unwrap().as_str().to_string()))
+            },
+            Rule::ty_alias => {
+                let mut res = res.into_inner();
+                let name = res.next().unwrap().as_str().to_string();
+                let ty = CtTyConstraint::try_from(res.next().unwrap())?;
+                let option = res.next().map(|p| p.as_str().to_string());
+
+                Ok(CtTypeDecl::Alias(name, ty, option))
+            },
+            _ => unreachable!()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -86,9 +532,56 @@ pub struct CtEncoding {
     pub encoding: String,
 }
 
+impl TryFrom<Pair<'_>> for CtEncoding {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, encoding);
+        Ok(CtEncoding {
+            encoding: pair.into_inner().next().unwrap().as_str().to_string()
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct CtAst {
     pub encoding: Option<CtEncoding>,
     pub type_decls: Vec<CtTypeDecl>,
     pub sections: Vec<CtSection>,
+}
+
+impl TryFrom<Pair<'_>> for CtAst {
+    type Error = ParseError;
+
+    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
+        assert_rule!(pair, tl);
+
+        let mut ast = CtAst {
+            encoding: None,
+            type_decls: vec![],
+            sections: vec![],
+        };
+
+        for i in pair.into_inner() {
+            match i.as_rule() {
+                Rule::encoding => {
+                    if ast.encoding.is_some() {
+                        return Err(ParseError::MultipleEncodings)
+                    }
+
+                    ast.encoding = Some(CtEncoding::try_from(i)?)
+                }
+                Rule::type_decl => {
+                    ast.type_decls.push(CtTypeDecl::try_from(i)?)
+                }
+                Rule::section | Rule::file => {
+                    ast.sections.push(CtSection::try_from(i)?)
+                }
+                Rule::EOI => {}
+                _ => unreachable!()
+            }
+        }
+
+        Ok(ast)
+    }
 }

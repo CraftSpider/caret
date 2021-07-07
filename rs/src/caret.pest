@@ -22,7 +22,7 @@ ty_rule = { ty ~ ident_ext }
 
 // An alias for a type, possibly with a rule applied
 /// Green
-ty_alias = { ident ~ "=" ~ constraint ~ (!"\r" | !"\n") ~ ident_ext? }
+ty_alias = { ident ~ "=" ~ ty_constraint ~ (!"\r" | !"\n") ~ ident_ext? }
 
 // A file type / constraint block
 /// #FF00FF
@@ -40,7 +40,7 @@ constraints_block = { "{" ~ NEWLINE* ~ (name_constraint ~ NEWLINE*)+ ~ NEWLINE* 
 ///////////////////////
 
 /// #FFBBCC
-name_constraint = { ident? ~ ":" ~ constraint ~ ("->" ~ val_constraint)? }
+name_constraint = { ident? ~ ":" ~ ty_constraint ~ ("->" ~ val_constraint)? }
 
 hex_literal = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
@@ -119,7 +119,7 @@ union = {
 }
 
 conditional = {
-    "?" ~ expr ~ "<" ~ constraint ~ ">" ~ "<" ~ constraint ~ ">"
+    "?" ~ "(" ~ expr ~ ")" ~ "<" ~ ty_constraint ~ ">" ~ "<" ~ ty_constraint ~ ">"
 }
 
 global = {
@@ -135,8 +135,8 @@ constraint_sub = {
 
 // A constraint
 /// #00FFFF
-constraint = {
-    constraint_sub ~ (union ~ constraint)?
+ty_constraint = {
+    constraint_sub ~ (union ~ ty_constraint)?
 }
 
 val_constraint = { expr }
@@ -149,27 +149,54 @@ keywords = {
     "null"
 }
 
-// TODO
-expr_target = {
-    ident |
-    literal
+expr_prefix = {
+    "not" |
+    "-"
 }
 
-expr_op = {
-    "is" |
-    "not" |
-    "and" |
-    "or" |
-    "lt" |
-    "gt" |
-    "." |
-    "," |
+expr_target = {
+    ident |
+    literal |
     "(" ~ expr ~ ")"
 }
 
-// TODO
-/// #6F00BB
-expr = { expr_target? ~ (expr_op ~ expr)? }
+expr_suffix = {
+    "(" ~ expr_list? ~ ")" |
+    "[" ~ expr_list ~ "]"
+}
+
+op_and = { "and" }
+
+op_is = { "is" }
+
+op_or = { "or" }
+
+op_lt = { "<" }
+
+op_gt = { ">" }
+
+op_dot = { "." }
+
+/// #008f8f
+expr_op = _{
+    op_and |
+    op_is |
+    op_or |
+    op_lt |
+    op_gt |
+    op_dot
+}
+
+/// #8f8f00
+expr_primary = {
+    expr_prefix* ~ expr_target ~ expr_suffix*
+}
+
+expr_list = {
+    expr ~ ("," ~ expr | ",")?
+}
+
+expr = { expr_primary ~ (expr_op ~ expr_primary)* }
 
 //////////////////
 // Atomic types //
