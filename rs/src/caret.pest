@@ -145,47 +145,77 @@ keywords = {
     "null"
 }
 
-expr_prefix = {
-    "not" |
-    "-"
-}
-
 expr_target = {
     ident |
     literal |
     "(" ~ expr ~ ")"
 }
 
-expr_suffix = {
-    "(" ~ expr_list? ~ ")" |
+op_not = {
+    "not"
+}
+
+op_neg = {
+    "-"
+}
+
+expr_prefix_op = _{
+    op_not |
+    op_neg
+}
+
+op_call = {
+    "(" ~ expr_list? ~ ")"
+}
+
+op_index = {
     "[" ~ expr_list ~ "]"
 }
 
-op_and = { "and" }
-
-op_is = { "is" }
+expr_suffix_op = _{
+    op_call |
+    op_index
+}
 
 op_or = { "or" }
+op_and = { "and" }
+op_is = { "is" }
+
+op_log_or = { "|" }
+op_log_and = { "&" }
 
 op_lt = { "<" }
-
 op_gt = { ">" }
+op_le = { "<=" }
+op_ge = { ">=" }
+
+op_add = { "+" }
+op_sub = { "-" }
+op_mul = { "*" }
+op_div = { "/" }
+op_rem = { "%" }
 
 op_dot = { "." }
 
 /// #008f8f
 expr_op = _{
     op_and |
-    op_is |
     op_or |
+    op_is |
+
+    op_log_or |
+    op_log_and |
+
+    op_le |
+    op_ge |
     op_lt |
     op_gt |
     op_dot
 }
 
 /// #8f8f00
-expr_primary = {
-    expr_prefix* ~ expr_target ~ expr_suffix*
+expr_primary = _{
+    expr_prefix_op* ~ expr_target ~ expr_suffix_op*
 }
 
 expr_list = {

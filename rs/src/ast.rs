@@ -1,8 +1,9 @@
 
-use pest::prec_climber::{Operator, PrecClimber, Assoc};
+// use pest::prec_climber::{Operator, PrecClimber, Assoc};
 
 use std::convert::TryFrom;
 
+use crate::prec::{Operator, Assoc, PrecClimber, Position};
 use crate::parse::{Pair, Rule, Error as ParseError};
 
 macro_rules! assert_rule {
@@ -15,11 +16,30 @@ macro_rules! assert_rule {
 
 #[derive(Debug)]
 pub enum CtOp {
-    Is,
-    And,
     Or,
+    And,
+    Is,
+
+    LogOr,
+    LogAnd,
+
+    Le,
+    Ge,
     Lt,
     Gt,
+
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+
+    Not,
+    Neg,
+
+    Call(Vec<CtExpr>),
+    Index(Vec<CtExpr>),
+
     Dot,
 }
 
@@ -28,32 +48,48 @@ impl TryFrom<Pair<'_>> for CtOp {
 
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         Ok(match pair.as_rule() {
-            Rule::op_is => CtOp::Is,
-            Rule::op_and => CtOp::And,
             Rule::op_or => CtOp::Or,
+            Rule::op_and => CtOp::And,
+            Rule::op_is => CtOp::Is,
+
+            Rule::op_log_or => CtOp::LogOr,
+            Rule::op_log_and => CtOp::LogAnd,
+
+            Rule::op_le => CtOp::Le,
+            Rule::op_ge => CtOp::Ge,
             Rule::op_lt => CtOp::Lt,
             Rule::op_gt => CtOp::Gt,
+
+            Rule::op_add => CtOp::Add,
+            Rule::op_sub => CtOp::Sub,
+            Rule::op_mul => CtOp::Mul,
+            Rule::op_div => CtOp::Div,
+            Rule::op_rem => CtOp::Rem,
+
+            Rule::op_neg => CtOp::Neg,
+            Rule::op_not => CtOp::Not,
+
+            Rule::op_call => CtOp::Call(
+                pair.into_inner()
+                    .next()
+                    .map(|p| p.into_inner()
+                        .map(CtExpr::try_from)
+                        .collect::<Result<_, _>>()
+                    )
+                    .transpose()?
+                    .unwrap_or_default()
+            ),
+            Rule::op_index => CtOp::Index(
+                pair.into_inner()
+                    .next()
+                    .unwrap()
+                    .into_inner()
+                    .map(CtExpr::try_from)
+                    .collect::<Result<_, _>>()?
+            ),
+
             Rule::op_dot => CtOp::Dot,
             rule => return Err(ParseError::InvalidRule(Rule::expr_op, rule)),
-        })
-    }
-}
-
-#[derive(Debug)]
-pub enum CtExprPrefix {
-    Not,
-    Neg,
-}
-
-impl TryFrom<Pair<'_>> for CtExprPrefix {
-    type Error = ParseError;
-
-    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
-        assert_rule!(pair, expr_prefix);
-        Ok(match pair.as_str() {
-            "not" => CtExprPrefix::Not,
-            "-" => CtExprPrefix::Neg,
-            _ => unreachable!(),
         })
     }
 }
@@ -82,72 +118,16 @@ impl TryFrom<Pair<'_>> for CtExprTarget {
 }
 
 #[derive(Debug)]
-pub enum CtExprSuffix {
-    Parens(Vec<CtExpr>), // May be empty
-    Braces(Vec<CtExpr>), // May not be empty
-}
-
-
-impl TryFrom<Pair<'_>> for CtExprSuffix {
-    type Error = ParseError;
-
-    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
-        assert_rule!(pair, expr_suffix);
-        let ty = if pair.as_str().starts_with('(') {
-            CtExprSuffix::Parens
-        } else {
-            CtExprSuffix::Braces
-        };
-        let res = pair.into_inner()
-            .next()
-            .map(|p| {
-                p.into_inner()
-                    .map(CtExpr::try_from)
-                    .collect::<Result<_, _>>()
-            })
-            .transpose()?
-            .unwrap_or_else(Vec::new);
-        Ok(ty(res))
-    }
-}
-
-#[derive(Debug)]
-pub struct CtExprPrimary {
-    prefixes: Vec<CtExprPrefix>,
-    target: CtExprTarget,
-    suffixes: Vec<CtExprSuffix>,
-}
-
-impl TryFrom<Pair<'_>> for CtExprPrimary {
-    type Error = ParseError;
-
-    fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
-        assert_rule!(pair, expr_primary);
-        let mut res = pair.into_inner();
-
-        let mut prefixes = Vec::new();
-        while res.peek().unwrap().as_rule() == Rule::expr_prefix {
-            prefixes.push(CtExprPrefix::try_from(res.next().unwrap())?)
-        }
-
-        let target = CtExprTarget::try_from(res.next().unwrap())?;
-
-        let mut suffixes = Vec::new();
-        while let Some(item) = res.next() {
-            suffixes.push(CtExprSuffix::try_from(item)?)
-        }
-
-        Ok(CtExprPrimary {
-            prefixes,
-            target,
-            suffixes,
-        })
-    }
-}
-
-#[derive(Debug)]
 pub enum CtExpr {
-    Leaf(CtExprPrimary),
+    Leaf(CtExprTarget),
+    PrefixOp {
+        op: CtOp,
+        right: Box<CtExpr>,
+    },
+    PostfixOp {
+        left: Box<CtExpr>,
+        op: CtOp,
+    },
     Op {
         left: Box<CtExpr>,
         op: CtOp,
@@ -161,28 +141,60 @@ impl TryFrom<Pair<'_>> for CtExpr {
     fn try_from(pair: Pair<'_>) -> Result<Self, Self::Error> {
         assert_rule!(pair, expr);
         let climber = PrecClimber::new(vec![
-            Operator::new(Rule::op_lt, Assoc::Left) | Operator::new(Rule::op_gt, Assoc::Left),
-            Operator::new(Rule::op_or, Assoc::Left),
-            Operator::new(Rule::op_and, Assoc::Left),
-            Operator::new(Rule::op_is, Assoc::Left),
-            Operator::new(Rule::op_dot, Assoc::Left),
+            Operator::new(Rule::op_or),
+            Operator::new(Rule::op_and),
+            Operator::new(Rule::op_is),
+            // Logical Operators
+            Operator::new(Rule::op_log_or),
+            Operator::new(Rule::op_log_and),
+            // Comparison
+            Operator::new(Rule::op_lt) |
+                Operator::new(Rule::op_gt) |
+                Operator::new(Rule::op_le) |
+                Operator::new(Rule::op_ge),
+            // Mathematics
+            Operator::new(Rule::op_add) |
+                Operator::new(Rule::op_sub),
+            Operator::new(Rule::op_mul) |
+                Operator::new(Rule::op_div) |
+                Operator::new(Rule::op_rem),
+            Operator::new_pos(Rule::op_neg, Position::Prefix) |
+                Operator::new_pos(Rule::op_not, Position::Prefix),
+            // Indexing/Calls
+            Operator::new_pos(Rule::op_call, Position::Suffix) |
+                Operator::new_pos(Rule::op_index, Position::Suffix),
+            // Property access
+            Operator::new(Rule::op_dot),
         ]);
 
         climber.climb(
             pair.into_inner(),
             |pair| {
-                Ok(CtExpr::Leaf(CtExprPrimary::try_from(pair)?))
+                Ok(CtExpr::Leaf(CtExprTarget::try_from(pair)?))
             },
         |left, op, right| {
                 let left = left?;
                 let right = right?;
-
                 Ok(CtExpr::Op {
                     left: Box::new(left),
                     op: CtOp::try_from(op)?,
                     right: Box::new(right),
                 })
-            }
+            },
+            |op, right| {
+                let right = right?;
+                Ok(CtExpr::PrefixOp {
+                    op: CtOp::try_from(op)?,
+                    right: Box::new(right),
+                })
+            },
+            |left, op| {
+                let left = left?;
+                Ok(CtExpr::PostfixOp {
+                    left: Box::new(left),
+                    op: CtOp::try_from(op)?,
+                })
+            },
         )
     }
 }
