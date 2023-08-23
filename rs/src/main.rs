@@ -1,7 +1,5 @@
-
-use caret::parse;
-
 pub fn main() {
-    let result = parse::parse("examples/syntax.def");
+    let result = caret::compile("examples/syntax.def");
+
     println!("{:?}", result);
 }

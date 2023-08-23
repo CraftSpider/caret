@@ -1,6 +1,6 @@
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CtLiteral {
+pub enum Literal {
     Integer(i128),
     Float(f64),
     ByteString(Vec<u8>),
@@ -9,10 +9,11 @@ pub enum CtLiteral {
     ByteChar(u8),
     UnicodeChar(char),
     Boolean(bool),
+    Null,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CtType {
+pub enum Type {
     I8,
     I16,
     I32,
@@ -26,32 +27,32 @@ pub enum CtType {
     String,
     Bool,
     Null,
-    Array(Box<CtType>, Option<CtExpr>),
-    Pointer(Box<CtType>),
+    Array(Box<Type>, Option<Expr>),
+    Pointer(Box<Type>),
     Section(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CtCondition {
-    pub condition: CtExpr,
-    pub left: Box<CtTyConstraint>,
-    pub right: Box<CtTyConstraint>,
+pub struct Condition {
+    pub condition: Expr,
+    pub left: Box<TyConstraint>,
+    pub right: Box<TyConstraint>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CtTyConstraint {
-    Literal(CtLiteral),
-    Type(CtType),
-    Union(Vec<CtTyConstraint>),
-    Conditional(CtCondition),
-    Global(CtType),
+pub enum TyConstraint {
+    Literal(Literal),
+    Type(Type),
+    Union(Vec<TyConstraint>),
+    Conditional(Condition),
+    Global(Type),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CtConstraint {
+pub struct Constraint {
     pub name: Option<String>,
-    pub ty_constraint: CtTyConstraint,
-    pub val_constraint: Option<CtExpr>,
+    pub ty_constraint: TyConstraint,
+    pub val_constraint: Option<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,44 +62,44 @@ pub enum SectionKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CtSection {
+pub struct Section {
     pub kind: SectionKind,
     pub name: String,
-    pub constraints: Vec<CtConstraint>,
+    pub constraints: Vec<Constraint>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CtTypeDecl {
-    Rule(CtType, String),
-    Alias(String, CtTyConstraint, String)
+pub enum TypeDecl {
+    Rule(Type, String),
+    Alias(String, TyConstraint, String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CtEncoding {
+pub struct Encoding {
     pub encoding: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CtTopLevel {
-    Section(CtSection),
-    File(CtSection),
-    Encoding(CtEncoding),
-    Type(CtTypeDecl),
+pub enum TopLevel {
+    Section(Section),
+    File(Section),
+    Encoding(Encoding),
+    Type(TypeDecl),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CtAst {
-    pub inner: Vec<CtTopLevel>,
+pub struct File {
+    pub inner: Vec<TopLevel>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum CtUnaryOp {
+pub enum UnOp {
     Neg,
     Inv,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum CtBinOp {
+pub enum BinOp {
     Is,
     And,
     Or,
@@ -114,11 +115,11 @@ pub enum CtBinOp {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CtExpr {
-    Literal(CtLiteral),
-    Array(Vec<CtExpr>),
-    Parens(Box<CtExpr>),
-    Unary(CtUnaryOp, Box<CtExpr>),
-    Binary(Box<CtExpr>, CtBinOp, Box<CtExpr>),
+pub enum Expr {
+    Literal(Literal),
     Ident(String),
+    Array(Vec<Expr>),
+    Parens(Box<Expr>),
+    Unary(UnOp, Box<Expr>),
+    Binary(Box<Expr>, BinOp, Box<Expr>),
 }

@@ -16,7 +16,7 @@ section SectionA {
     name7 : 1
     name8 : -7
     // TODO: Suffixed literals
-    // name9 : 1.f
+    name9 : 1.f32
     name10 : 1.0
     name11 : "Test"
     name12 : u"Test"
@@ -26,11 +26,11 @@ section SectionA {
     name16 : true
     name17 : false
 
-    name18 : ? null == null <true> <false>
+    name18 : ? (null == null) <true> <false>
 
     name19 : @SectionB
 
-    name20 : null[10] -> isunique(self, array)
+    name20 : uint8[10] -> isunique(self, array)
 
     : null
 
@@ -43,8 +43,8 @@ file FilaA {
 
 section StressTest {
     this_is_a_very_long_name_with_a_lot_ofUnderscoresAndAlsoSwitchingStyleHalfwayThrough : null
-    nested_conditional : ? null == null <? null == null <true> <false>> <? null == null <true> <false>>
-    complex_union : ? null == null <true> <false> | ? null == null <true> <false>
+    nested_conditional : ? (null == null) <? (null == null) <true> <false>> <? (null == null) <true> <false>>
+    complex_union : ? (null == null) <true> <false> | ? (null == null) <true> <false>
     long_union : sint8|sint16|sint32|sint64|uint8|uint16|uint32|uint64|null
     pointer_pointer : SectionA***
     array_array : Section[1][1][1]
@@ -55,7 +55,7 @@ section StressTest {
 }
 
 section      WeirdSpacing     {
-  name:?a == b<null><null>
+  name:?(a == b    )<null><null>
     name :null
   name: null    | SectionA
 :@   SectionA

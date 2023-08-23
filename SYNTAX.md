@@ -129,7 +129,7 @@ The value constraint places limits on the value, is optional, and is evaluated a
 
 Types of constraint:
 - Literal
-    - Integer literal: 1, -7, 0xFF
+    - Integer literal: 1, -7, 0xFF, 1u32
     - Float literal: 1.f, 1.0
     - String literal: "Test"
     - Unicode literal: u"Test"
@@ -149,7 +149,7 @@ Types of constraint:
     - Section|sint32[]
 - Conditional
     - An expression followed by the type if expression is true, then if expression is false
-    - ? 1 is 1 or not a and b \<true> \<false>
+    - ? (1 is 1 or not a and b) \<true> \<false>
 - Global
     - A limit that all objects of a type must appear here. Does not otherwise guarantee anything
     - @SectionName
